@@ -1,0 +1,313 @@
+---
+title: "Baysian Statistics - Movie rating analysis"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(BAS)
+library(GGally)
+library(tidyr)
+library(BAS)
+library(broom)
+
+```
+### Load data
+
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+* * *
+
+## Part 1: Data
+
+The data comprises of 651 randomly selected movies from 1970 to 2016 and their 32 descriptive variables such as release year, best picture nomination, movie score on Rotten Tomatoes and IMDB etc. 
+
+Since the data collection method is an observation and not a random assignment experiment, no causality can be established.
+
+The conclusions can only be generalizable to the population that the random sample was selected from, that is, movies released from 1970 to 2016.
+* * *
+
+## Part 2: Data manipulation
+
+
+```{r}
+movies <-movies %>%
+  mutate(feature_film = case_when(title_type == 'Feature Film' ~ 'yes', 
+                         title_type!= 'Feature Film' & title_type!='NA' ~ 'no', 
+                         TRUE ~  'NA')) %>%
+  mutate(feature_film = as.factor(feature_film))
+
+movies <-movies %>%
+  mutate(drama = case_when(genre == 'Drama' ~ 'yes', 
+                         genre!= 'Drama' & genre!='NA' ~ 'no', 
+                         TRUE ~  'NA')) %>%
+  mutate(drama = as.factor(drama))
+
+movies <-movies %>%
+  mutate(mpaa_rating_R = case_when(mpaa_rating == 'R' ~ 'yes', 
+                         mpaa_rating!= 'R'& mpaa_rating!='NA' ~ 'no',
+                         TRUE ~  'NA')) %>%
+  mutate(mpaa_rating_R = as.factor(mpaa_rating_R))
+
+movies <-movies %>%
+  mutate(oscar_season = case_when(thtr_rel_month == 10 |thtr_rel_month == 11 |
+                          thtr_rel_month == 12 ~ 'yes', 
+                         (thtr_rel_month!= 10|thtr_rel_month!= 11|thtr_rel_month!= 12)
+                         & thtr_rel_month!='NA' ~ 'no', 
+                         TRUE ~  'NA'))  %>%
+  mutate(oscar_season = as.factor(oscar_season))
+
+movies <-movies %>%
+  mutate(summer_season = case_when(thtr_rel_month == 5|thtr_rel_month == 6 
+                          |thtr_rel_month == 7 | thtr_rel_month == 8 ~ 'yes',
+                          (thtr_rel_month!= 5|thtr_rel_month!= 6|
+                          thtr_rel_month!= 7|thtr_rel_month!= 8)
+                         & thtr_rel_month!='NA' ~ 'no', 
+                         TRUE ~  'NA')) %>%
+  mutate(summer_season = as.factor(summer_season))
+
+```
+
+
+
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+```{r}
+
+movies_long<- movies %>%
+pivot_longer(33:37, names_to = "variable", values_to = "Yes_or_No")
+
+ggplot(movies_long, aes(x=variable, y=audience_score, fill=Yes_or_No))+
+  geom_boxplot()+ 
+  scale_fill_manual(values=c("#E0D1CB", "#F2A378")) +
+  theme_bw()
+
+```
+
+
+```{r}
+
+movies_long_subset<-movies_long[c(18,33:34)]
+tapply(movies_long_subset$audience_score, list(movies_long_subset$variable, movies_long_subset$Yes_or_No), mean) 
+
+
+```
+```{r}
+summary(movies[33:37])
+```
+Boxplots below show the relationship between audience_score and newly constructed variables.In addition, a summary statistic of mean value of categories 'yes' or 'no' for new variables shows us whether on average 'yes' or 'no' influences the audience score.
+
+* For drama variable, we see on average a higher audience score if movie is type 'drama'.
+
+* In feature_film variable we see the most noticeable difference in audience score depending on whether the movie is feature film or not, where non feature films have on average a much higher score than feature films with less variability. However, as seen from he summary statistics of the new variables, in this sample we have almost 10 times more observations of non feature films than the feature films which might have contributed to the variability and the observed differences in the mean and median audience score.
+
+* In MPPA_rating_R, oscar_season and summer_season variables the difference between the mean and median audience score is small, with variables having comparable variance.
+
+* * *
+
+## Part 4: Modeling
+
+First, we select the variables of our choice and remove rows with NA values in any of the given rows.
+```{r}
+movies_select<-movies[,c('audience_score','feature_film','drama', 'runtime', 'mpaa_rating_R', 'thtr_rel_year', 'oscar_season', 'summer_season', 'imdb_rating', 'imdb_num_votes', 'critics_score', 'best_pic_nom', 'best_pic_win', 'best_actor_win', 'best_actress_win', 'best_dir_win', 'top200_box')]
+movies_select=na.omit(movies_select)
+```
+
+Plotting a histogram of audience_score reveals a left-tailed distribution of scores with two peaks.
+
+
+
+```{r}
+ggplot(movies_select, aes(x=audience_score)) + 
+ geom_histogram(aes(y=..density..), colour="#E0D1CB", fill="#F2A378")+
+ geom_density(alpha=.2, fill="#2E2B3D") +
+  theme_bw()
+```
+To normalize the audience score distribution, we introduce a squared audience score variable saudience_score.
+```{r}
+
+movies_select$saudience_score = (movies_select$audience_score)^2
+
+```
+
+s_audience score histogram shows a more uniform distribution, still exhibiting two peaks, however less apparent.
+
+```{r}
+ggplot(movies_select, aes(x=saudience_score)) + 
+ geom_histogram(aes(y=..density..), colour="#E0D1CB", fill="#F2A378")+
+ geom_density(alpha=.2, fill="#2E2B3D") +
+  theme_bw()
+```
+
+Examining the correlation between the numerical variables in our prediction model, we notice that imdb_rating and critics_score are highly correlated.  
+```{r}
+ggpairs(movies_select[,c('audience_score', 'runtime',  'thtr_rel_year', 'imdb_rating', 'imdb_num_votes', 'critics_score')])
+```
+
+Therefore including both of these variables in one model is not desirable and further we will create two Baysian multiple regression models, one including imdb_rating (movies.ZS_ir) and one including critics_score (movies.ZS_cs).
+
+```{r}
+
+movies.ZS_ir =  bas.lm(saudience_score ~ .-audience_score-saudience_score-critics_score, data=movies_select,
+                   prior="ZS-null", modelprior=uniform(), method = "MCMC") 
+movies.ZS_cs =  bas.lm(saudience_score ~ .-audience_score-imdb_rating, data=movies_select,
+                   prior="ZS-null", modelprior=uniform(), method = "MCMC")  
+
+summary(movies.ZS_ir)
+summary(movies.ZS_cs)
+```
+
+**Diagnostics**
+
+##### Residuals Versus Fitted Values Using BMA #####
+
+The plots below show the residuals over the fitted value under Bayesian model averaging results for both models movies.ZS_cs and movies.ZS_ir.
+
+* For movies.ZS_cs model the residuals are mostly randomly scattered around o indicating a constant variance.  
+
+* For movies.ZS_cs model we see that the residuals are not randomly scattered around 0 showing a V shaped relationship. 
+
+Considering the non normal residuals of movies.ZS_cs model and the fact that we have no information of whether audience_score and imdb_rating are independent, that is, whether people who voted on Rotten Tomatoes website (thus influencing the audience score variable) also did not vote on the IMDB website contributing to that rating as well, we decide to dismiss the model containing imdb_rating variable and proceed with movies.ZS_cs model.
+
+
+```{r}
+plot(movies.ZS_cs, which = 1, add.smooth = F, 
+     ask = F, pch = 16, sub.caption="", caption="")
+abline(a = 0, b = 0, col = "darkgrey", lwd = 2) 
+plot(movies.ZS_ir, which = 1, add.smooth = F, 
+     ask = F, pch = 16, sub.caption="", caption="")
+abline(a = 0, b = 0, col = "darkgrey", lwd = 2)
+
+```
+
+
+##### Residuals Versus Fitted Values Using BMA #####
+
+The diagnostic plot shows that all points are on the 45 degree diagonal line meaning that the posterior inclusion probability of each variable from MCMC have converged to the theoretical posterior inclusion probability.
+
+
+```{r}
+
+diagnostics(movies.ZS_cs, type="pip", col = "blue", pch = 16, cex = 1.5)
+```
+
+The model posterior probability plot also shows that all points are on the diagonal line suggesting that we have enough MCMC iterations.
+
+```{r}
+
+diagnostics(movies.ZS_cs, type = "model", col = "blue", pch = 16, cex = 1.5)
+```
+
+##### Cumulative Sampled Probability #####
+
+The cumulative sampled model probability plot shows that at 500 models the probability is leveling off and additional models are not contributing to the posterior distribution.
+
+```{r}
+
+plot(movies.ZS_cs, which=2, add.smooth = F, sub.caption="", caption="")
+```
+
+
+##### Model Complexity #####
+
+The model size versus the natural logarithm of the marginal likelihood plot shows that models with 6 to 8 predictors have the highest marginal likelihoods. 
+
+```{r}
+
+plot(movies.ZS_cs, which=3, ask=F, caption="", sub.caption="")
+```
+
+##### Model Space Visualization #####
+
+Model Space Visualization shows that the top 3 models all include feature_film, drama, imdb_num_votes and critics_score variables. 
+
+```{r}
+
+image(movies.ZS_cs, rotate = F)
+```
+
+
+
+##### Marginal Inclusion Probability #####
+
+Additionally, marginal inclusion probability plot shows that thtr_rel_year is also an important predictor variable. 
+
+```{r}
+
+plot(movies.ZS_cs, which = 4, ask = F, caption = "", sub.caption = "", 
+     col.in = "blue", col.ex = "darkgrey", lwd = 3)
+```
+he lines in blue correspond to the variables where the marginal posterior inclusion probability (pip), is greater than 0.5, suggesting that these variables are important for prediction. The variables represented in grey lines have posterior inclusion probability less than 0.5. Small posterior inclusion probability may arise when two or more variables are highly correlated, similar to large  
+p
+ -values with multicollinearity. So we should be cautious to use these posterior inclusion probabilities to eliminate variables.
+
+* * *
+
+## Part 5: Prediction
+
+To predict the IMDB score of the movie "The Accountant" (2016) [https://www.imdb.com/title/tt2140479/?ref_=fn_ft_tt_19; https://www.rottentomatoes.com/m/the_accountant_2016], we need to create a database of the variables needed for the model and then use the `predict` function to predict its rating using the Best Predictive Model.
+
+```{r}
+Accountant<-data.frame(imdb_num_votes=269454 , drama='yes' , critics_score=52, feature_film='yes',
+     mpaa_rating_R='yes' , thtr_rel_year=2016, oscar_season='yes')
+```
+
+```{r}
+BPM_pred_movies.ZS_cs <- predict(movies.ZS_cs, estimator = "BPM", se.fit = TRUE)
+variable.names(BPM_pred_movies.ZS_cs)
+```
+
+We see that Best predictive model includes the following variables: feature_film, drama, mpaa_rating_R, thtr_rel_year, oscar_season, imdb_num_votes, critics_score. Now we create a model based on these variables. 
+
+```{r}
+movies.ZS_cs_final =  bas.lm(saudience_score ~ feature_film+drama+mpaa_rating_R+thtr_rel_year+oscar_season+imdb_num_votes+ critics_score   , data=movies_select,
+                   prior="ZS-null", modelprior=uniform(), method = "MCMC")
+```
+
+To calculate the predicted audiece score, we first need to take the squareroot of the fit because it was based on the saudience_score variable.
+```{r}
+predicition_Accountant<-predict(movies.ZS_cs_final, Accountant, estimator='BPM', se.fit = TRUE)
+predicted_audience_score=sqrt(predicition_Accountant$fit)
+predicted_audience_score
+
+```
+
+
+We also calculate the confidence interval of the audience score:
+```{r}
+
+movies.BPM.conf.fit = confint(predicition_Accountant, parm = "mean")
+
+sqrt(cbind(predicition_Accountant$fit,movies.BPM.conf.fit))
+```
+
+The predicted audience score of the movie 'Accountant' is 69.6 with the confidence interval from 67.5 to 72.5. The actual audience score of the movie is 76. The actual score does not lie within the confidence interval however it is close to its upper bound. This indicates that the model would need to be improved to precisely predict audience score of movies.
+
+* * *
+
+## Part 6: Conclusion
+The above analysis created a Bayesian Averaging Model to predict the audience score based on several variables. We used Best Predictive Model to estimate audience score of a selected movie. The Best Predictive Model did not deliver a precise prediction within the 95% confidence interval. 
+
+
+This shows that the model can be improved. We could do an experiment incited of observational study, where we control for the selected movies and amount of reviews. Usually people who go on websites to rate movies are either highly satisfied or highly dissatisfied which inflates/deflates the rating making the model less precise. 
+
+
+

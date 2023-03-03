@@ -1,0 +1,231 @@
+---
+title: "Linear Regression Modeling and rating prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(tidyr)
+library(GGally)
+library(patchwork)
+library(olsrr)
+```
+
+### Load data
+
+
+```{r load-data}
+load("movies.Rdata")
+```
+
+
+* * *
+
+## Part 1: Data
+
+The data comprises of 651 randomly selected movies from 1970 to 2016 and their 32 descriptive variables such as release year, best picture nomination, movie score on Rotten Tomatoes and IMDB etc. 
+
+Since the data collection method is an observation, no causality can be established. From our analysis we will only be able to show association between variables. 
+
+The conclusions can only be generalisable to the sample population, that is, movies released from 1970 to 2016
+
+* * *
+
+## Part 2: Research question
+
+** Which variables are associated with the IMDB score of a movie? **
+
+We want to investigate which variables are important to consider when making a new movie, to ensure higher popularity of a movie. 
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+Firstly, we pick the variables to be used in the further analysis.
+
+Want to predict: "imdb_rating" 
+
+* Included:
+  + categorical: "best_actor_win", "best_actress_win","best_dir_win","top200_box", "genre", "best_pic_nom", "best_pic_win",  "thtr_rel_day", "thtr_rel_month", "dvd_rel_month",   "dvd_rel_day", "title_type", "mpaa_rating"
+
+  + numerical: "runtime" 
+
+* Not included: 
+  + "title": could be explored if certain words in the title are associated with viewer score however too complicated
+  + "imdb_url","rt_url": irrelevant
+  + "director","actor1", "actor2" ,"actor3", "actor4","actor5": included in other variable, for example, "best_dir_win", 
+  + "dvd_rel_year", "thtr_rel_year", "imdb_num_votes"    :  we want to explore what influences popularity of the movies to predict it for future movies. Year or nr of votes is not a variable we can influence for future movies. 
+  + "critics_rating","critics_score", "audience_rating","audience_score"  : these variables are from 'Rotten Tomatoes'. It is possible that there are people who voted on both sited, thus for independence of variables, we exclude these.     
+   +  "studio " - too many levels 
+ 
+ Next, we select the chosen variables and exclude rows that have NA values.      
+```{r}
+df1<- select(movies, imdb_rating,best_actor_win, best_actress_win,best_dir_win,top200_box, genre, runtime , best_pic_nom, best_pic_win,  thtr_rel_day, thtr_rel_month, dvd_rel_month,   dvd_rel_day, title_type, mpaa_rating)%>% 
+  drop_na()
+
+```
+
+Now can we will explore our variable of interest, the IMDB rating of a movie. 
+```{r}
+boxplot(df1$imdb_rating)
+summary(df1$imdb_rating)
+```
+From the box-plot and the summary, we can see that the distribution of IMDB ratings is left skewed with a median of 6.6. 50% of the data is between 5.9 and 7.3, which is a range of only 1.4 rating points.
+
+
+Since the IMDB rating are given from 1 to 10, in a normal distribution, we would expect the mean to be around 5.5. 
+```{r}
+plot(df1$imdb_rating)+abline(h=5.5)
+lesseq55=sum(df1$imdb_rating <= 5.5)
+perc_lesseq55=lesseq55*100/nrow(df1)
+perc_lesseq55=format(round(perc_lesseq55, 0), nsmall = 0)
+paste("Nr of observations with IMDB score equal or less than 5.5: ", lesseq55)
+paste("Percentage of observations with IMDB score equal or less than 5.5:", perc_lesseq55, "%")
+```
+However as seen from the plot and summary variables, only 15% of the ratings are below 5.5 score, and the majority (75%) is above 5.5 rating. 
+* * *
+
+## Part 4: Modeling
+Develop a multiple linear regression model to predict a numerical variable in the dataset. The response variable and the explanatory variables can be existing variables in the dataset, or new variables you create based on existing variables.
+
+To search for variables that are associated with the IMDB score of a movie, we apply a full linear model consisting of all chosen variables. 
+```{r}
+full_model<-lm(imdb_rating~best_actor_win+ best_actress_win+best_dir_win+top200_box+genre+runtime+best_pic_nom+best_pic_win+thtr_rel_day+thtr_rel_month+dvd_rel_month+dvd_rel_day+title_type+ mpaa_rating,data=df1)
+summary(full_model)
+```
+
+To determine the best model for IMDB rating prediction, we will use backward selection p-value method.
+Here we drop the variable with the highest p-value and refit the model using `ols_step_backward_p()` function from the olsrr library. The steps are repeat until all remaining variables are significant, that is, until Pr(>|t|) is smaller than 0.05 for at least one of the factors of the variable.  
+```{r}
+ols_step_backward_p(full_model, details = TRUE)
+```
+
+In these steps we eliminated 6 variables: best_pic_win ,best_actress_win, dvd_rel_day, best_actor_win, thtr_rel_month, thtr_rel_day. Now we create a linear model with the remaining variables: 
+```{r}
+mr_model<-lm(imdb_rating~best_dir_win+top200_box+genre+runtime+best_pic_nom+dvd_rel_month+title_type+ mpaa_rating,data=df1)
+```
+
+
+>Conditions
+
+For us to apply multiple linear regression model, several conditions have to be fulfilled: 
+
+<ol>
+<li>Linear relationship between each (numerical) explanatory variable and the response - checked using scatterplots of $y$ vs. each $x$, and residuals plots of residuals vs. each $x$
+
+```{r}
+p1<-ggplot(data = df1, aes(x = runtime, y = imdb_rating)) +
+  geom_jitter()+
+  geom_smooth(method = "lm")
+
+p2<-plot(mr_model$residuals~df1$runtime)
+
+p1+p2
+
+
+
+```
+
+
+The only numerical variable in the model is 'runtime'. The graph imdb_rating vs runtime shows that a lot of datapoints are concentrated around 80-150 minutes of runtime with less datapoints for lower or higher runtime. The datapoints within the 80-150 runtime minutes suggest a linear relation. 
+
+The residuals vs runtime plot shows a nearly random distribution of points around 0 from 80 to 150 runtime minutes, however not much data is available outside this region. 
+
+
+</li>
+
+
+<li> Nearly normal residuals with mean 0 - checked using a normal probability plot and histogram of residuals
+
+```{r}
+hist(mr_model$residuals)
+
+```
+
+The residuals have a nearly normal distribution with a slight left skew.
+
+
+```{r}
+qqnorm(mr_model$residuals)
+qqline(mr_model$residuals)
+```
+
+The normal probability plot shows a linear relationship except for the tail areas.  
+
+</li>
+
+<li> Constant variability of residuals - checked using residuals plots of residuals vs. \hat{y}
+
+```{r}
+plot(mr_model$residuals~mr_model$fitted)
+
+```
+
+ The residuals exibit a fan structure, having a higher variability at the lower end and lower variability at the higher values of the fitted IMDB score.
+ 
+ 
+```{r}
+plot(abs(mr_model$residuals)~mr_model$fitted)
+```
+ 
+ 
+ This is also confirmed by the triangle structure in the absolute value of residuals versus the predicted values. 
+ 
+ Ideally, we would like to see an equal variability across the whole range of the fitted values. 
+
+</li>
+
+<li> Independence of residuals - checked using a scatterplot of residuals vs. order of data collection 
+
+
+```{r}
+plot(mr_model$residuals)
+```
+
+
+The plot reveals an equal variation across all the indices, revealing the independance of residuals and thus observations. 
+</li>
+
+
+</ol>
+
+
+
+* * *
+
+## Part 5: Prediction
+
+
+
+To predict the IMDB score of the moview "The Accountant" (2016) [https://www.imdb.com/title/tt2140479/?ref_=fn_ft_tt_19], we need to create a database of the variables needed for the model and then use the `predict` function to predict its rating.
+
+```{r}
+Accountant<-data.frame(best_dir_win='no' , top200_box='no' , genre='Action & Adventure' , 
+    runtime=128 , best_pic_nom='no', title_type='Feature Film', mpaa_rating='R' , dvd_rel_month=1)
+predict(mr_model,Accountant, interval='predict')
+```
+
+The model predicts the IMDB rating of the movie to be within the interval from 4. 34 to 7.87, with a direct fit to the model 6.11. The actual IMDB score of the movie is 7.3, which fits within the predicted interval, however is 1.2 rating points away from the direct fit into model. The predicted interval is rather wide (3.5 rating points) to be used as an effective predictor of the IMDB score of a movie
+* * *
+
+## Part 6: Conclusion
+
+
+The results show, that there are several variables (title type, MPAA rating, DVD release month, Top 200 Box Office list, runtime, best picture nomination, Top 200 Box Office list, best director win and genre) that are strongly associated with a IMDB score of a movie. 
+
+
+However, as shown from the data exploration, the data is highly left skewed, with 50% of the data concentrated in a 1.4 point range. This might be due to the data collection method. It is possible that people who leave ratings on the IMDB website have strong emotions about the movie that prompts them to rate it online. This might inflate or deflate movie`s rating. For a better prediction model, ideally the data should be collected from random volunteers.
+
+
+Also, as seen from the residuals vs fitted values plot, there is uneven distribution of the residuals, with more variability at the lower end. We had very little data for values below 5.5 points and above 8. To correct for this, we might use weighed sampling, choosing equal amount of movies within each rating range for a more equal distribution. 
+
