@@ -1,10 +1,7 @@
 ---
 title: "Exploring mental health data in the BRFSS dataset"
-output: 
-  html_document: 
-    fig_height: 4
-    highlight: pygments
-    theme: spacelab
+output: github_document
+
 ---
 
 ## Setup

@@ -1,10 +1,6 @@
 ---
 title: "Baysian Statistics - Movie rating analysis"
-output: 
-  html_document: 
-    fig_height: 4
-    highlight: pygments
-    theme: spacelab
+output: github_document
 ---
 
 ## Setup

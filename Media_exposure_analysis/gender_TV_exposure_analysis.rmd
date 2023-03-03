@@ -1,10 +1,6 @@
 ---
 title: "Statistical inference with the GSS data - media exposure by gender"
-output: 
-  html_document: 
-    fig_height: 4
-    highlight: pygments
-    theme: spacelab
+output: github_document
 ---
 
 ## Setup
